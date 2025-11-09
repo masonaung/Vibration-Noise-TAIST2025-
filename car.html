@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Quarter-Car Suspension Animation</title>
+<style>
+  :root{
+    --bg:#0b0f14;--panel:#0f141b;--line:#1b2430;--fg:#e6edf3;--muted:#9fb0c0;
+    --accent:#7dc3ff;--spring:#7dffb3;--damper:#ff7b7b;--tire:#ffd166;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px system-ui,Arial;}
+  .wrap{max-width:1200px;margin:22px auto;padding:0 16px;display:grid;grid-template-columns:280px 1fr;gap:18px;}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;}
+  h1{font-size:18px;margin:0 0 12px;}
+  label{display:flex;justify-content:space-between;margin:8px 0;color:var(--muted);}
+  input[type=number]{width:140px;}
+  button{background:#1a2532;color:var(--fg);border:1px solid #2a3a4f;border-radius:10px;padding:8px 12px;cursor:pointer;margin-right:6px;}
+  button:hover{filter:brightness(1.12);}
+  .canvases{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  canvas{width:100%;height:440px;background:#0d131a;border:1px solid var(--line);border-radius:14px;}
+  footer{text-align:center;color:var(--muted);margin:14px;}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+  
+  <div class="panel">
+    <h1>TAIST2025, Vibration & Noise Class</h1>
+
+    <label>Simulation Time (s)
+      <input id="simTime" type="number" value="12"/>
+    </label>
+
+    <label>Car Weight (kg)
+      <input id="carMass" type="number" value="1200"/>
+    </label>
+
+    <button id="btnRun">▶ Run</button>
+    <button id="btnPause">⏸ Pause</button>
+    <button id="btnReset">↺ Reset</button>
+
+    <p style="color:var(--muted);margin-top:14px;">
+      mₛ = 0.25 × Car weight, mᵤ = 40 kg<br>
+      kₛ = 15000 N/m, cₛ = 1500 Ns/m<br>
+      kₜ = 70000 N/m<br>
+      Initial: zₛ(0)=+0.02 m, zᵤ(0)=+0.005 m → both oscillate and settle.
+    </p>
+
+    <p style="font-size:12px;color:var(--muted);">Time: <span id="stateTxt">0.00 s</span></p>
+  </div>
+
+  <div class="panel canvases">
+    <canvas id="anim" width="560" height="440"></canvas>
+    <canvas id="plot" width="560" height="440"></canvas>
+  </div>
+
+</div>
+
+<footer>Assignment submitted by <b>Zaw Htut Aung (KMUTT)</b></footer>
+
+<script>
+(function(){
+
+  const anim = document.getElementById("anim").getContext("2d");
+  const plot = document.getElementById("plot").getContext("2d");
+  const $ = id => document.getElementById(id);
+
+  // Physics parameters
+  const ks=15000, cs=1500, kt=70000, ct=0, mu=40;
+
+  let ms = 0.25*Number($("carMass").value);
+  let T  = Number($("simTime").value);
+  let state={t:0,x:[0.02,0,0.005,0]};
+  let hist=[{t:0,zs:0.02,zu:0.005}];
+  let playing=false;
+
+  function deriv(t,[zs,zsd,zu,zud]){
+    const zr=0;
+    return [
+      zsd,
+      (-cs*(zsd - zud) - ks*(zs - zu)) / ms,
+      zud,
+      ( cs*(zsd - zud) + ks*(zs - zu) - kt*(zu - zr) - ct*(zud) ) / mu
+    ];
+  }
+
+  function stepRK4(h){
+    const t=state.t, x=state.x;
+    const k1=deriv(t,x);
+    const x2=x.map((xi,i)=>xi+0.5*h*k1[i]); const k2=deriv(t+0.5*h,x2);
+    const x3=x.map((xi,i)=>xi+0.5*h*k2[i]); const k3=deriv(t+0.5*h,x3);
+    const x4=x.map((xi,i)=>xi+h*k3[i]);     const k4=deriv(t+h,x4);
+    state.x = x.map((xi,i)=> xi + (h/6)*(k1[i]+2*k2[i]+2*k3[i]+k4[i]));
+    state.t+=h;
+    hist.push({t:state.t,zs:state.x[0],zu:state.x[2]});
+  }
+
+  function spring(ctx,x1,y1,x2,y2){
+    ctx.strokeStyle="var(--spring)"; ctx.lineWidth=2;
+    ctx.beginPath();
+    const dx=x2-x1, dy=y2-y1, L=Math.hypot(dx,dy);
+    const nx=dx/L, ny=dy/L, px=-ny, py=nx;
+    const seg=L/14, amp=8;
+    let cx=x1, cy=y1;
+    ctx.moveTo(cx,cy);
+    for(let i=0;i<14;i++){
+      cx+=nx*seg+px*(i%2?amp:-amp);
+      cy+=ny*seg+py*(i%2?amp:-amp);
+      ctx.lineTo(cx,cy);
+    }
+    ctx.lineTo(x2,y2);
+    ctx.stroke();
+  }
+
+  function damper(ctx,x1,y1,x2,y2){
+    ctx.strokeStyle="var(--damper)"; ctx.lineWidth=4;
+    ctx.beginPath();
+    const dx=x2-x1, dy=y2-y1, L=Math.hypot(dx,dy), nx=dx/L, ny=dy/L, len=24;
+    ctx.moveTo(x1,y1); ctx.lineTo(x1+nx*len,y1+ny*len);
+    ctx.moveTo(x2,y2); ctx.lineTo(x2-nx*len,y2-ny*len);
+    ctx.moveTo(x1+nx*len,y1+ny*len); ctx.lineTo(x2-nx*len,y2-ny*len);
+    ctx.stroke();
+  }
+
+  function drawAnim(){
+    const W=anim.canvas.width, H=anim.canvas.height;
+    anim.clearRect(0,0,W,H);
+
+    const groundY = H-60;            // More vertical space → prevents cutoff
+    const wheelR = 34;
+    const wheelX = W*0.72;
+    const bodyX  = W*0.30;
+
+    const scale = 90000;             // amplify visible motion
+    let zs = state.x[0]*scale;
+    let zu = state.x[2]*scale;
+
+    let wheelY = groundY - wheelR - zu;
+    wheelY = Math.min(wheelY, groundY-wheelR);
+
+    const wheelTop = wheelY - wheelR;
+    const bodyW=190, bodyH=96;
+
+    // vertical offset ensures car body stays inside frame
+    let bodyY = wheelTop - 120 - zs;
+
+    // prevent body-wheel overlap visually
+    const minBodyBottom = wheelTop - 14;
+    const bodyBottom = bodyY + bodyH/2;
+    if(bodyBottom > minBodyBottom){
+      bodyY -= (bodyBottom - minBodyBottom);
+    }
+
+    // ground
+    anim.strokeStyle="#233246"; anim.lineWidth=2;
+    anim.beginPath(); anim.moveTo(0,groundY); anim.lineTo(W,groundY); anim.stroke();
+
+    // wheel
+    anim.fillStyle="#101821"; anim.strokeStyle="var(--tire)";
+    anim.beginPath(); anim.arc(wheelX,wheelY,wheelR,0,Math.PI*2); anim.fill(); anim.stroke();
+
+    // tire spring
+    spring(anim, wheelX, groundY, wheelX, wheelY+wheelR);
+
+    // car body
+    anim.fillStyle="#132031"; anim.strokeStyle="var(--accent)"; anim.lineWidth=2;
+    anim.beginPath();
+    anim.rect(bodyX-bodyW/2, bodyY-bodyH/2, bodyW, bodyH);
+    anim.fill(); anim.stroke();
+
+    // suspension spring + damper
+    spring(anim, bodyX+bodyW/2, bodyY, wheelX, wheelY);
+    damper(anim, bodyX+bodyW/2, bodyY, wheelX, wheelY);
+
+    $("stateTxt").textContent = state.t.toFixed(2)+" s";
+  }
+
+  function drawPlot(){
+    const W=plot.canvas.width, H=plot.canvas.height;
+    plot.clearRect(0,0,W,H);
+
+    const x0=50, y0=H-30, w=W-x0-15, h=H-45;
+
+    plot.strokeStyle="#233246"; plot.lineWidth=1;
+    plot.beginPath(); plot.moveTo(x0,10); plot.lineTo(x0,y0); plot.lineTo(W-10,y0); plot.stroke();
+
+    const Tmax = T;
+    const maxAmp = Math.max(...hist.map(p=>Math.abs(p.zs)),...hist.map(p=>Math.abs(p.zu)),1e-3);
+    const ys = (h/2)/(maxAmp*1.3);
+
+    const xt = t=>x0+(t/Tmax)*w;
+    const yz = z=>y0-(z*ys + h/2);
+
+    // zs
+    plot.strokeStyle="#7dc3ff"; plot.beginPath();
+    plot.moveTo(xt(hist[0].t),yz(hist[0].zs));
+    hist.forEach(p=>plot.lineTo(xt(p.t),yz(p.zs)));
+    plot.stroke();
+
+    // zu
+    plot.strokeStyle="#ffd166"; plot.beginPath();
+    plot.moveTo(xt(hist[0].t),yz(hist[0].zu));
+    hist.forEach(p=>plot.lineTo(xt(p.t),yz(p.zu)));
+    plot.stroke();
+  }
+
+  function drawAll(){ drawAnim(); drawPlot(); }
+
+  function tick(ts){
+    if(playing && state.t<T){ stepRK4(1/600); drawAll(); }
+    requestAnimationFrame(tick);
+  }
+
+  $("btnRun").onclick=()=>{playing=true;};
+  $("btnPause").onclick=()=>{playing=false;};
+  $("btnReset").onclick=()=>{
+    ms = 0.25*Number($("carMass").value);
+    T  = Number($("simTime").value);
+    state={t:0,x:[0.02,0,0.005,0]};
+    hist=[{t:0,zs:0.02,zu:0.005}];
+    playing=false;
+    drawAll();
+  };
+
+  drawAll();
+  requestAnimationFrame(tick);
+
+})();
+</script>
+</body>
+</html>
