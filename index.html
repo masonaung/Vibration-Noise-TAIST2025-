@@ -5,8 +5,8 @@
 <title>Quarter-Car Suspension Animation</title>
 <style>
   :root{
-    --bg:#0b0f14;--panel:#0f141b;--line:#1b2430;--fg:#e6edf3;--muted:#9fb0c0;
-    --accent:#7dc3ff;--spring:#7dffb3;--damper:#ff7b7b;--tire:#ffd166;
+    --bg:lch(34.23% 13.76 265.29);--panel:#0f141b;--line:#1b2430;--fg:#e6edf3;--muted:#9fb0c0;
+    --accent:#69757f;--spring:#7dffb3;--damper:#ff7b7b;--tire:#ffd166;
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--fg);font:14px system-ui,Arial;}
@@ -20,14 +20,23 @@
   .canvases{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
   canvas{width:100%;height:440px;background:#0d131a;border:1px solid var(--line);border-radius:14px;}
   footer{text-align:center;color:var(--muted);margin:14px;}
+  .math{margin-top:16px;font-size:15px;line-height:1.6;color:var(--fg);}
+  .math h2{font-size:16px;margin:0 0 8px;color:var(--muted);}
+  .note{color:var(--muted);font-size:12px;margin-top:6px;}
 </style>
+
+<!-- MathJax for pretty equations (display only) -->
+<script async id="MathJax-script"
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+</script>
 </head>
 
 <body>
 <div class="wrap">
   
   <div class="panel">
-    <h1>TAIST2025, Vibration & Noise Class</h1>
+    <h1>TAIST2025, VIBRATION AND NOISE ENGINEERING</h1>
+    <h1>Take Home Exam Submitted by Zaw Htut Aung (KMUTT)</h1>
 
     <label>Simulation Time (s)
       <input id="simTime" type="number" value="12"/>
@@ -51,14 +60,66 @@
     <p style="font-size:12px;color:var(--muted);">Time: <span id="stateTxt">0.00 s</span></p>
   </div>
 
-  <div class="panel canvases">
-    <canvas id="anim" width="560" height="440"></canvas>
-    <canvas id="plot" width="560" height="440"></canvas>
+  <div class="panel">
+    <div class="canvases">
+      <canvas id="anim" width="560" height="440"></canvas>
+      <canvas id="plot" width="560" height="440"></canvas>
+    </div>
+
+    <!-- Display-only math section -->
+    <div class="math">
+      <h2>Equations of Motion (2 Degree of Freedom)</h2>
+      <div>
+        \[
+        \begin{aligned}
+        m_s\,\ddot z_s \;+\; c_s(\dot z_s-\dot z_u)\;+\;k_s(z_s-z_u) &= F_{\text{ext}}(t),\\[4pt]
+        m_u\,\ddot z_u \;+\; c_s(\dot z_u-\dot z_s)\;+\;k_s(z_u-z_s)\;+\;k_t(z_u-z_r) &= 0.
+        \end{aligned}
+        \]
+      </div>
+
+      <h2>State Space Representation</h2>
+      <div>
+        \[
+          x=\begin{bmatrix}x_1\\x_2\\x_3\\x_4\end{bmatrix}
+          =\begin{bmatrix} z_s\\ \dot z_s\\ z_u\\ \dot z_u \end{bmatrix},\qquad
+          \dot x = A\,x + B\,u(t),\qquad
+          y = C\,x + D\,u(t),
+        \]
+        \[
+          u(t)=\begin{bmatrix}F_{\text{ext}}(t)\\ z_r(t)\end{bmatrix}.
+        \]
+        \[
+          A=\begin{bmatrix}
+          0 & 1 & 0 & 0\\[4pt]
+          -\dfrac{k_s}{m_s} & -\dfrac{c_s}{m_s} & \dfrac{k_s}{m_s} & \dfrac{c_s}{m_s}\\[10pt]
+          0 & 0 & 0 & 0\\[4pt]
+          \dfrac{k_s}{m_u} & \dfrac{c_s}{m_u} & -\dfrac{k_s+k_t}{m_u} & -\dfrac{c_s}{m_u}
+          \end{bmatrix},
+          \qquad
+          B=\begin{bmatrix}
+          0 & 0\\[4pt]
+          \dfrac{1}{m_s} & 0\\[10pt]
+          0 & 0\\[4pt]
+          0 & \dfrac{k_t}{m_u}
+          \end{bmatrix}.
+        \]
+        \[
+          C=\begin{bmatrix}
+          1 & 0 & 0 & 0\\
+          0 & 0 & 1 & 0
+          \end{bmatrix},
+          \qquad
+          D=\mathbf{0}.
+        \]
+      </div>
+      <div class="note"></div>
+    </div>
   </div>
 
 </div>
 
-<footer>Assignment submitted by <b>Zaw Htut Aung (KMUTT)</b></footer>
+<footer>Take Home Exam submitted by <b>Zaw Htut Aung (KMUTT)</b></footer>
 
 <script>
 (function(){
@@ -81,17 +142,30 @@
     return [
       zsd,
       (-cs*(zsd - zud) - ks*(zs - zu)) / ms,
-      zud,
+      0, // note: x3 = z_u; its derivative is handled below in the last state
       ( cs*(zsd - zud) + ks*(zs - zu) - kt*(zu - zr) - ct*(zud) ) / mu
     ];
   }
 
   function stepRK4(h){
-    const t=state.t, x=state.x;
-    const k1=deriv(t,x);
-    const x2=x.map((xi,i)=>xi+0.5*h*k1[i]); const k2=deriv(t+0.5*h,x2);
-    const x3=x.map((xi,i)=>xi+0.5*h*k2[i]); const k3=deriv(t+0.5*h,x3);
-    const x4=x.map((xi,i)=>xi+h*k3[i]);     const k4=deriv(t+h,x4);
+    const t=state.t, x=state.x.slice();
+
+    // Expand to keep x3' = zud and x1' = zsd consistent in RK4:
+    function f(tt,xx){
+      const zs=xx[0], zsd=xx[1], zu=xx[2], zud=xx[3];
+      const zr=0;
+      return [
+        zsd,
+        (-cs*(zsd - zud) - ks*(zs - zu)) / ms,
+        zud,
+        ( cs*(zsd - zud) + ks*(zs - zu) - kt*(zu - zr) - ct*(zud) ) / mu
+      ];
+    }
+
+    const k1=f(t,x);
+    const x2=x.map((xi,i)=>xi+0.5*h*k1[i]); const k2=f(t+0.5*h,x2);
+    const x3=x.map((xi,i)=>xi+0.5*h*k2[i]); const k3=f(t+0.5*h,x3);
+    const x4=x.map((xi,i)=>xi+h*k3[i]);     const k4=f(t+h,x4);
     state.x = x.map((xi,i)=> xi + (h/6)*(k1[i]+2*k2[i]+2*k3[i]+k4[i]));
     state.t+=h;
     hist.push({t:state.t,zs:state.x[0],zu:state.x[2]});
@@ -128,12 +202,12 @@
     const W=anim.canvas.width, H=anim.canvas.height;
     anim.clearRect(0,0,W,H);
 
-    const groundY = H-60;            // More vertical space → prevents cutoff
+    const groundY = H-60;
     const wheelR = 34;
     const wheelX = W*0.72;
     const bodyX  = W*0.30;
 
-    const scale = 90000;             // amplify visible motion
+    const scale = 90000;
     let zs = state.x[0]*scale;
     let zu = state.x[2]*scale;
 
@@ -143,10 +217,8 @@
     const wheelTop = wheelY - wheelR;
     const bodyW=190, bodyH=96;
 
-    // vertical offset ensures car body stays inside frame
     let bodyY = wheelTop - 120 - zs;
 
-    // prevent body-wheel overlap visually
     const minBodyBottom = wheelTop - 14;
     const bodyBottom = bodyY + bodyH/2;
     if(bodyBottom > minBodyBottom){
